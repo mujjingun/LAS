@@ -81,6 +81,7 @@ class LAS(torch.nn.Module):
         self.loss_func = torch.nn.CrossEntropyLoss(ignore_index=pad)
         self.optim = torch.optim.Adam(self.parameters(), lr=0.2, betas=(0.9, 0.98), eps=10e-9)
         self.step = 1
+        self.device = device
 
     def forward(self, source, target):
         h = self.listener(source)
@@ -93,6 +94,7 @@ class LAS(torch.nn.Module):
         return loss
 
     def train_step(self, source, target):
+        source, target = source.to(self.device), target.to(self.device)
         loss = self.loss(source, target)
         lr = 0.2 * 0.98 ** (self.step // 3000000)
         for group in self.optim.param_groups:
