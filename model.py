@@ -96,11 +96,12 @@ class LAS(torch.nn.Module):
     def train_step(self, source, target):
         source, target = source.to(self.device), target.to(self.device)
         loss = self.loss(source, target)
-        lr = 0.2 * 0.98 ** (self.step // 3000000)
+        lr = 0.2 * (0.98 ** (self.step // 500))
         for group in self.optim.param_groups:
             group['lr'] = lr
         self.optim.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.parameters(), 1)
         self.optim.step()
         self.step += 1
 
