@@ -6,6 +6,7 @@ import model
 import tqdm
 import dataset
 import numpy as np
+import os
 import jiwer
 
 
@@ -51,7 +52,11 @@ def main(args):
     # construct model
     las_model = model.LAS(device, vocab_size, pad_idx)
 
-    # TODO: load model
+    # load model
+    if os.path.exists(args.file_name):
+        print("Loading model from file ", args.file_name)
+        las_model.load(args.file_name)
+        print("Loaded.")
 
     if not args.test:
         for epoch in range(args.epochs):
@@ -70,7 +75,10 @@ def main(args):
                 # TODO: validation
                 pass
 
-        # TODO: save model
+        # save model
+        print("Saving to ", args.file_name)
+        las_model.save(args.file_name)
+        print("Saved.")
     else:
         for source, target in tqdm.tqdm(test):
             # TODO: test
@@ -98,5 +106,10 @@ if __name__ == "__main__":
     parser.add_argument(
         '--test',
         action='store_true'
+    )
+    parser.add_argument(
+        '--file_name',
+        type=str,
+        default="model/checkpoint.t7"
     )
     main(parser.parse_args())
