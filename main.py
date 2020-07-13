@@ -28,7 +28,7 @@ def main(args):
     train, val = torch.utils.data.random_split(data, [train_size, val_size])
 
     # make dataloaders
-    collate_fn = dataset.make_collate_fn(pad_idx, device)
+    collate_fn = dataset.make_collate_fn(pad_idx)
     train = torch.utils.data.DataLoader(
         train,
         batch_size=args.batch_size,
@@ -62,7 +62,7 @@ def main(args):
 
             pbar = tqdm.tqdm(train)
             for source, target in pbar:
-                loss = las_model.loss(source, target).item()
+                loss = las_model.train_step(source, target)
                 pbar.set_description("Loss = {:.6f}".format(loss))
             print("Train loss ", np.mean(train_losses))
 

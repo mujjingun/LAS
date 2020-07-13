@@ -38,12 +38,12 @@ class AttendAndSpell(torch.nn.Module):
     def __init__(self, device, vocab_size, hidden_size=512):
         super(AttendAndSpell, self).__init__()
         self.attn = AttentionContext(device, hidden_size, hidden_size, hidden_size)
-        self.lstm0 = torch.nn.LSTMCell(hidden_size + vocab_size, hidden_size)
-        self.lstm1 = torch.nn.LSTMCell(hidden_size, hidden_size)
+        self.lstm0 = torch.nn.LSTMCell(hidden_size + vocab_size, hidden_size).to(device)
+        self.lstm1 = torch.nn.LSTMCell(hidden_size, hidden_size).to(device)
         self.device = device
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = torch.nn.Linear(hidden_size, vocab_size)
+        self.output = torch.nn.Linear(hidden_size, vocab_size).to(device)
 
     def forward(self, h, y):
         batch_size = h.shape[0]
