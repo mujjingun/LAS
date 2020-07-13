@@ -67,13 +67,18 @@ def main(args):
 
             pbar = tqdm.tqdm(train)
             for source, target in pbar:
+                source, target = source.to(device), target.to(device)
                 loss = las_model.train_step(source, target)
+                train_losses.append(loss)
                 pbar.set_description("Loss = {:.6f}".format(loss))
             print("Train loss ", np.mean(train_losses))
 
             for source, target in val:
-                # TODO: validation
-                pass
+                source, target = source.to(device), target.to(device)
+                with torch.no_grad():
+                    loss = las_model.loss(source, target).item()
+                val_losses.append(loss)
+            print("Val loss ", np.mean(val_losses))
 
         # save model
         print("Saving to ", args.file_name)

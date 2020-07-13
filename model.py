@@ -94,7 +94,6 @@ class LAS(torch.nn.Module):
         return loss
 
     def train_step(self, source, target):
-        source, target = source.to(self.device), target.to(self.device)
         loss = self.loss(source, target)
         lr = 0.002 * (0.98 ** (self.step // 500))
         for group in self.optim.param_groups:
