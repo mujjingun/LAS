@@ -45,7 +45,7 @@ class AttendAndSpell(torch.nn.Module):
         self.arange = torch.arange(vocab_size, device=device)
         self.output = torch.nn.Linear(hidden_size, vocab_size).to(device)
 
-    def forward(self, h, y):
+    def forward(self, h, y, sample_prob=0.1):
         batch_size = h.shape[0]
         # initial states
         s0 = torch.zeros((batch_size, self.hidden_size), device=self.device)
@@ -55,21 +55,35 @@ class AttendAndSpell(torch.nn.Module):
         cs0 = torch.zeros((batch_size, self.hidden_size), device=self.device)
         cs1 = torch.zeros((batch_size, self.hidden_size), device=self.device)
 
-        # to one hot encoding
-        y = (y.unsqueeze(2) == self.arange.unsqueeze(0).unsqueeze(1)).float()
+        # sampling probability
+        prob = torch.empty((batch_size,), device=self.device)
+        prob.fill_(sample_prob)
 
         # rnn
-        s = []
+        output = []
         for i in range(y.shape[1]):
+            if i == 0:
+                z = y[:, i]
+            else:
+                # sample from previous time step
+                pr = torch.softmax(output[-1], dim=1)
+                sampled = torch.multinomial(pr, 1).reshape(batch_size)
+                # choose between target and sampled outputs
+                do_sample = torch.bernoulli(prob).byte()
+                z = torch.where(do_sample, sampled, y[:, i])
+            # one-hot encoding
+            z = (z.unsqueeze(1) == self.arange.unsqueeze(0)).float()
+            # attention
             c = self.attn(s1, h)
-            inputs = torch.cat([y[:, i], c], dim=1)
+            # two-layer lstm
+            inputs = torch.cat([z, c], dim=1)
             s0, cs0 = self.lstm0(inputs, (s0, cs0))
             s1, cs1 = self.lstm1(s0, (s1, cs1))
-            s.append(s1)
-        s = torch.stack(s, dim=1)
+            # project to output space
+            o = self.output(s1)
+            output.append(o)
+        output = torch.stack(output, dim=1)
 
-        # project to output space
-        output = self.output(s)
         return output
 
 
@@ -79,7 +93,7 @@ class LAS(torch.nn.Module):
         self.listener = Listener(device)
         self.attend_spell = AttendAndSpell(device, vocab_size)
         self.loss_func = torch.nn.CrossEntropyLoss(ignore_index=pad)
-        self.optim = torch.optim.SGD(self.parameters(), lr=0.0)
+        self.optim = torch.optim.Adam(self.parameters(), lr=0.0)
         self.step = 1
         self.device = device
 
@@ -95,7 +109,7 @@ class LAS(torch.nn.Module):
 
     def train_step(self, source, target):
         loss = self.loss(source, target)
-        lr = 0.2 * (0.98 ** (self.step // 500))
+        lr = 0.002 * (0.98 ** (self.step // 500))
         for group in self.optim.param_groups:
             group['lr'] = lr
         self.optim.zero_grad()
