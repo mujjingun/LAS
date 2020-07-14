@@ -1,6 +1,31 @@
 import torch
 
 
+def clone_modules(module, n):
+    if n == 0:
+        return torch.nn.ModuleList()
+    modules = [module]
+    for _ in range(n - 1):
+        modules.append(module.clone())
+    return torch.nn.ModuleList(modules)
+
+
+class MLP(torch.nn.Module):
+    def __init__(self, device, n_layers, input_dim, hidden_size):
+        super(MLP, self).__init__()
+        self.dropout = torch.nn.Dropout(0.2)
+        self.ln0 = torch.nn.LayerNorm(hidden_size).to(device)
+        self.lns = clone_modules(torch.nn.LayerNorm(hidden_size), n_layers - 1).to(device)
+        self.W0 = torch.nn.Linear(input_dim, hidden_size).to(device)
+        self.Ws = clone_modules(torch.nn.Linear(hidden_size, hidden_size), n_layers - 1).to(device)
+
+    def forward(self, x):
+        x = self.ln0(self.dropout(torch.relu(self.W0(x))))
+        for w, ln in zip(self.Ws, self.lns):
+            x = ln(x + self.dropout(torch.relu(w(x))))
+        return x
+
+
 class Listener(torch.nn.Module):
     def __init__(self, device, input_dim=40, hidden_size=256):
         super(Listener, self).__init__()
@@ -22,8 +47,8 @@ class Listener(torch.nn.Module):
 class AttentionContext(torch.nn.Module):
     def __init__(self, device, listener_features, decoder_features, context_dims):
         super(AttentionContext, self).__init__()
-        self.phi = torch.nn.Linear(decoder_features, context_dims).to(device)
-        self.psi = torch.nn.Linear(listener_features, context_dims).to(device)
+        self.phi = MLP(device, 3, decoder_features, context_dims)
+        self.psi = MLP(device, 3, listener_features, context_dims)
 
     def forward(self, s, h):
         s = self.phi(s)
@@ -43,7 +68,7 @@ class AttendAndSpell(torch.nn.Module):
         self.device = device
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = torch.nn.Linear(hidden_size, vocab_size).to(device)
+        self.output = MLP(device, 3, hidden_size, vocab_size)
 
     def forward(self, h, y, sample_prob=0.1):
         batch_size = h.shape[0]
@@ -109,7 +134,7 @@ class LAS(torch.nn.Module):
 
     def train_step(self, source, target):
         loss = self.loss(source, target)
-        lr = 0.002 * (0.98 ** (self.step // 500))
+        lr = 0.002 * (0.98 ** (self.step // 100))
         for group in self.optim.param_groups:
             group['lr'] = lr
         self.optim.zero_grad()

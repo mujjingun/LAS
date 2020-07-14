@@ -80,10 +80,10 @@ def main(args):
                 val_losses.append(loss)
             print("Val loss ", np.mean(val_losses))
 
-        # save model
-        print("Saving to ", args.file_name)
-        las_model.save(args.file_name)
-        print("Saved.")
+            # save model
+            print("Saving to ", args.file_name)
+            las_model.save(args.file_name)
+            print("Saved.")
     else:
         for source, target in tqdm.tqdm(test):
             # TODO: test
@@ -101,12 +101,12 @@ if __name__ == "__main__":
     parser.add_argument(
         '--batch_size',
         type=int,
-        default=4
+        default=16
     )
     parser.add_argument(
         '--epochs',
         type=int,
-        default=1
+        default=100
     )
     parser.add_argument(
         '--test',
