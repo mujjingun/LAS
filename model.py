@@ -9,7 +9,6 @@ class MLP(torch.nn.Module):
         self.lns = torch.nn.ModuleList([
             torch.nn.LayerNorm(hidden_size) for _ in range(n_layers - 2)
         ]).to(device)
-        self.lnf = torch.nn.LayerNorm(output_size).to(device)
         self.W0 = torch.nn.Linear(input_dim, hidden_size).to(device)
         self.Ws = torch.nn.ModuleList([
             torch.nn.Linear(hidden_size, hidden_size) for _ in range(n_layers - 2)
@@ -20,7 +19,7 @@ class MLP(torch.nn.Module):
         x = self.ln0(self.dropout(torch.relu(self.W0(x))))
         for w, ln in zip(self.Ws, self.lns):
             x = ln(x + self.dropout(torch.relu(w(x))))
-        x = self.lnf(self.Wf(x))
+        x = self.dropout(self.Wf(x))
         return x
 
 
