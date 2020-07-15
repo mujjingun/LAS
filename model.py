@@ -2,22 +2,25 @@ import torch
 
 
 class MLP(torch.nn.Module):
-    def __init__(self, device, n_layers, input_dim, hidden_size):
+    def __init__(self, device, n_layers, input_dim, hidden_size, output_size):
         super(MLP, self).__init__()
         self.dropout = torch.nn.Dropout(0.2)
         self.ln0 = torch.nn.LayerNorm(hidden_size).to(device)
         self.lns = torch.nn.ModuleList([
-            torch.nn.LayerNorm(hidden_size) for _ in range(n_layers - 1)
+            torch.nn.LayerNorm(hidden_size) for _ in range(n_layers - 2)
         ]).to(device)
+        self.lnf = torch.nn.LayerNorm(hidden_size).to(device)
         self.W0 = torch.nn.Linear(input_dim, hidden_size).to(device)
         self.Ws = torch.nn.ModuleList([
-            torch.nn.Linear(hidden_size, hidden_size) for _ in range(n_layers - 1)
+            torch.nn.Linear(hidden_size, hidden_size) for _ in range(n_layers - 2)
         ]).to(device)
+        self.Wf = torch.nn.Linear(hidden_size, output_size).to(device)
 
     def forward(self, x):
         x = self.ln0(self.dropout(torch.relu(self.W0(x))))
         for w, ln in zip(self.Ws, self.lns):
             x = ln(x + self.dropout(torch.relu(w(x))))
+        x = self.lnf(self.Wf(x))
         return x
 
 
@@ -42,8 +45,8 @@ class Listener(torch.nn.Module):
 class AttentionContext(torch.nn.Module):
     def __init__(self, device, listener_features, decoder_features, context_dims):
         super(AttentionContext, self).__init__()
-        self.phi = MLP(device, 2, decoder_features, context_dims)
-        self.psi = MLP(device, 2, listener_features, context_dims)
+        self.phi = MLP(device, 2, decoder_features, context_dims, context_dims)
+        self.psi = MLP(device, 2, listener_features, context_dims, context_dims)
 
     def forward(self, s, h):
         s = self.phi(s)
@@ -63,7 +66,7 @@ class AttendAndSpell(torch.nn.Module):
         self.device = device
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = MLP(device, 3, hidden_size, vocab_size)
+        self.output = MLP(device, 3, hidden_size, hidden_size, vocab_size)
 
     def forward(self, h, y, sample_prob=0.1):
         batch_size = h.shape[0]
@@ -153,3 +156,6 @@ class LAS(torch.nn.Module):
         self.load_state_dict(load_state['weights'])
         self.optim.load_state_dict(load_state['optim'])
         self.step = load_state['step']
+
+    def predict(self, source):
+        h = self.listener(source)
