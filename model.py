@@ -2,28 +2,6 @@ import torch
 import tqdm
 
 
-class MLP(torch.nn.Module):
-    def __init__(self, device, n_layers, input_dim, hidden_size, output_size):
-        super(MLP, self).__init__()
-        self.dropout = torch.nn.Dropout(0.2)
-        self.ln0 = torch.nn.LayerNorm(hidden_size).to(device)
-        self.lns = torch.nn.ModuleList([
-            torch.nn.LayerNorm(hidden_size) for _ in range(n_layers - 2)
-        ]).to(device)
-        self.W0 = torch.nn.Linear(input_dim, hidden_size).to(device)
-        self.Ws = torch.nn.ModuleList([
-            torch.nn.Linear(hidden_size, hidden_size) for _ in range(n_layers - 2)
-        ]).to(device)
-        self.Wf = torch.nn.Linear(hidden_size, output_size).to(device)
-
-    def forward(self, x):
-        x = self.ln0(self.dropout(torch.relu(self.W0(x))))
-        for w, ln in zip(self.Ws, self.lns):
-            x = ln(x + self.dropout(torch.relu(w(x))))
-        x = self.dropout(self.Wf(x))
-        return x
-
-
 class Listener(torch.nn.Module):
     def __init__(self, device, input_dim=40, hidden_size=256):
         super(Listener, self).__init__()
@@ -37,7 +15,7 @@ class Listener(torch.nn.Module):
         x = x.transpose(0, 1)
         for lstm in self.lstms:
             x, _ = lstm(x)
-            x = torch.cat([x[0::2], x[1::2]], dim=2)
+            x = x.reshape([x.shape[0] // 2, x.shape[1], x.shape[2] * 2])
         x = x.transpose(0, 1)
         return x
 
@@ -67,7 +45,7 @@ class AttendAndSpell(torch.nn.Module):
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = MLP(device, 3, hidden_size, 256, vocab_size)
+        self.output = torch.nn.Linear(hidden_size, vocab_size).to(device)
 
     def initial_states(self, batch_size):
         # initial states
