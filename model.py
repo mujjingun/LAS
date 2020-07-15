@@ -1,4 +1,5 @@
 import torch
+import tqdm
 
 
 class MLP(torch.nn.Module):
@@ -44,8 +45,8 @@ class Listener(torch.nn.Module):
 class AttentionContext(torch.nn.Module):
     def __init__(self, device, listener_features, decoder_features, context_dims):
         super(AttentionContext, self).__init__()
-        self.phi = MLP(device, 2, decoder_features, context_dims, context_dims)
-        self.psi = MLP(device, 2, listener_features, context_dims, context_dims)
+        self.phi = torch.nn.Linear(decoder_features, context_dims).to(device)
+        self.psi = torch.nn.Linear(listener_features, context_dims).to(device)
 
     def forward(self, s, h):
         s = self.phi(s)
@@ -63,12 +64,12 @@ class AttendAndSpell(torch.nn.Module):
         self.lstm0 = torch.nn.LSTMCell(hidden_size + vocab_size, hidden_size).to(device)
         self.lstm1 = torch.nn.LSTMCell(hidden_size, hidden_size).to(device)
         self.device = device
+        self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = MLP(device, 3, hidden_size, hidden_size, vocab_size)
+        self.output = MLP(device, 3, hidden_size, 256, vocab_size)
 
-    def forward(self, h, y, sample_prob=0.1):
-        batch_size = h.shape[0]
+    def initial_states(self, batch_size):
         # initial states
         s0 = torch.zeros((batch_size, self.hidden_size), device=self.device)
         s1 = torch.zeros((batch_size, self.hidden_size), device=self.device)
@@ -77,40 +78,83 @@ class AttendAndSpell(torch.nn.Module):
         cs0 = torch.zeros((batch_size, self.hidden_size), device=self.device)
         cs1 = torch.zeros((batch_size, self.hidden_size), device=self.device)
 
+        return (s0, cs0), (s1, cs1)
+
+    def step(self, z, h, states):
+        (s0, s1), (cs0, cs1) = states
+        # one-hot encoding
+        z = (z.unsqueeze(1) == self.arange.unsqueeze(0)).float()
+        # attention
+        c = self.attn(s1, h)
+        # two-layer lstm
+        inputs = torch.cat([z, c], dim=1)
+        s0, cs0 = self.lstm0(inputs, (s0, cs0))
+        s1, cs1 = self.lstm1(s0, (s1, cs1))
+        # project to output space
+        o = self.output(s1)
+        return o, ((s0, cs0), (s1, cs1))
+
+    def forward(self, h, y):
+        batch_size = h.shape[0]
+        states = self.initial_states(batch_size)
+
         # sampling probability
-        prob = torch.empty((batch_size,), device=self.device)
-        prob.fill_(sample_prob)
+        prob = torch.empty((batch_size,), device=self.device).fill_(0.1)
 
         # rnn
         output = []
+        z = y[:, 0]
         for i in range(y.shape[1]):
-            if i == 0:
-                z = y[:, i]
-            else:
-                # sample from previous time step
-                pr = torch.softmax(output[-1], dim=1).detach()
-                sampled = torch.multinomial(pr, 1).reshape(batch_size)
-                # choose between target and sampled outputs
-                do_sample = torch.bernoulli(prob).byte()
-                z = torch.where(do_sample, sampled, y[:, i])
-            # one-hot encoding
-            z = (z.unsqueeze(1) == self.arange.unsqueeze(0)).float()
-            # attention
-            c = self.attn(s1, h)
-            # two-layer lstm
-            inputs = torch.cat([z, c], dim=1)
-            s0, cs0 = self.lstm0(inputs, (s0, cs0))
-            s1, cs1 = self.lstm1(s0, (s1, cs1))
-            # project to output space
-            o = self.output(s1)
+            # advance one time step
+            o, states = self.step(z, h, states)
+            # sample from output
+            pr = torch.softmax(o, dim=1)
+            sampled = torch.multinomial(pr, 1).reshape(batch_size)
+            # choose between target and sampled outputs
+            do_sample = torch.bernoulli(prob).byte()
+            z = torch.where(do_sample, sampled, y[:, i]).detach()
+            # append output
             output.append(o)
         output = torch.stack(output, dim=1)
-
         return output
+
+    def predict(self, h, max_length, beam_size):
+        batch_size = h.shape[0]
+        h = h.repeat_interleave(beam_size, dim=0)
+        states = self.initial_states(batch_size * beam_size)
+
+        # start with sos
+        target = torch.zeros((batch_size, beam_size, 1), dtype=torch.long, device=self.device)
+        probs = torch.ones((batch_size, beam_size), device=self.device)
+        for length in tqdm.tqdm(range(1, max_length + 1)):
+            # advance one time step
+            z = target[:, :, -1].reshape(batch_size * beam_size)
+            o, states = self.step(z, h, states)
+
+            # multiply new conditional probability
+            pr = torch.softmax(o, dim=1)
+            pr = pr.reshape(batch_size, beam_size, self.vocab_size)
+            pr = pr * probs.unsqueeze(2)
+            pr = pr.reshape(batch_size, beam_size * self.vocab_size)
+
+            # get top k
+            probs, indices = torch.topk(pr, beam_size)
+            beam_indices = indices // self.vocab_size
+            beam_indices = beam_indices.unsqueeze(2).repeat_interleave(length, dim=2)
+            word_indices = indices % self.vocab_size
+
+            target = torch.gather(target, 1, beam_indices)
+            new_col = word_indices.unsqueeze(2)
+            target = torch.cat([target, new_col], dim=2)
+
+        # find beam with highest probability
+        best_idx = torch.argmax(probs, dim=1)
+        best_output = target[torch.arange(batch_size), best_idx]
+        return best_output
 
 
 class LAS(torch.nn.Module):
-    def __init__(self, device, vocab_size, pad):
+    def __init__(self, device, vocab_size, pad, start_lr, decay_steps):
         super(LAS, self).__init__()
         self.listener = Listener(device)
         self.attend_spell = AttendAndSpell(device, vocab_size)
@@ -118,6 +162,8 @@ class LAS(torch.nn.Module):
         self.optim = torch.optim.Adam(self.parameters(), lr=0.0)
         self.step = 1
         self.device = device
+        self.start_lr = start_lr
+        self.decay_steps = decay_steps
 
     def forward(self, source, target):
         h = self.listener(source)
@@ -131,7 +177,7 @@ class LAS(torch.nn.Module):
 
     def train_step(self, source, target):
         loss = self.loss(source, target)
-        lr = 0.002 * (0.98 ** (self.step // 100))
+        lr = self.start_lr * (0.98 ** (self.step // self.decay_steps))
         for group in self.optim.param_groups:
             group['lr'] = lr
         self.optim.zero_grad()
@@ -156,5 +202,8 @@ class LAS(torch.nn.Module):
         self.optim.load_state_dict(load_state['optim'])
         self.step = load_state['step']
 
-    def predict(self, source):
-        h = self.listener(source)
+    def predict(self, source, max_length, beam_size):
+        with torch.no_grad():
+            h = self.listener(source)
+            pred = self.attend_spell.predict(h, max_length, beam_size)
+            return pred.cpu().numpy().tolist()

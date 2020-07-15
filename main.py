@@ -20,6 +20,14 @@ def main(args):
     pad_idx = max(mapping.values()) + 1
     vocab_size = pad_idx + 1
 
+    # inverse mapping
+    inv_map = {v: k for k, v in mapping.items()}
+    inv_map[pad_idx] = ""
+
+    # convert sequence to sentence
+    def seq_to_sen(seq):
+        return "".join(inv_map[i] for i in seq)
+
     # load dataset
     data = dataset.SpeechDataset('train-clean-100.csv', args.path, True)
 
@@ -43,14 +51,16 @@ def main(args):
         num_workers=4
     )
     test = torch.utils.data.DataLoader(
-        dataset.SpeechDataset('test-clean.csv', args.path, False),
+        dataset.SpeechDataset('test-clean.csv', args.path, True),
         batch_size=args.batch_size,
         collate_fn=collate_fn,
         num_workers=4
     )
 
     # construct model
-    las_model = model.LAS(device, vocab_size, pad_idx)
+    las_model = model.LAS(device, vocab_size, pad_idx,
+                          start_lr=args.start_lr,
+                          decay_steps=args.decay_steps)
 
     # load model
     if os.path.exists(args.file_name):
@@ -85,8 +95,13 @@ def main(args):
             las_model.save(args.file_name)
             print("Saved.")
     else:
-        for source, target in tqdm.tqdm(test):
-            # TODO: test
+        for source, target in test:
+            pred_batch = las_model.predict(source, max_length=100, beam_size=4)
+            sentences = []
+            for seq in pred_batch:
+                sen = seq_to_sen(seq)
+                sentences.append(sen)
+                print(sen)
             # TODO: evaluate WER
             pass
 
@@ -105,6 +120,16 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--epochs',
+        type=int,
+        default=100
+    )
+    parser.add_argument(
+        '--start_lr',
+        type=float,
+        default=0.002
+    )
+    parser.add_argument(
+        '--decay_steps',
         type=int,
         default=100
     )
