@@ -1,23 +1,18 @@
 import torch
 
 
-def clone_modules(module, n):
-    if n == 0:
-        return torch.nn.ModuleList()
-    modules = [module]
-    for _ in range(n - 1):
-        modules.append(module.clone())
-    return torch.nn.ModuleList(modules)
-
-
 class MLP(torch.nn.Module):
     def __init__(self, device, n_layers, input_dim, hidden_size):
         super(MLP, self).__init__()
         self.dropout = torch.nn.Dropout(0.2)
         self.ln0 = torch.nn.LayerNorm(hidden_size).to(device)
-        self.lns = clone_modules(torch.nn.LayerNorm(hidden_size), n_layers - 1).to(device)
+        self.lns = torch.nn.ModuleList([
+            torch.nn.LayerNorm(hidden_size) for _ in range(n_layers - 1)
+        ]).to(device)
         self.W0 = torch.nn.Linear(input_dim, hidden_size).to(device)
-        self.Ws = clone_modules(torch.nn.Linear(hidden_size, hidden_size), n_layers - 1).to(device)
+        self.Ws = torch.nn.ModuleList([
+            torch.nn.Linear(hidden_size, hidden_size) for _ in range(n_layers - 1)
+        ]).to(device)
 
     def forward(self, x):
         x = self.ln0(self.dropout(torch.relu(self.W0(x))))
@@ -47,8 +42,8 @@ class Listener(torch.nn.Module):
 class AttentionContext(torch.nn.Module):
     def __init__(self, device, listener_features, decoder_features, context_dims):
         super(AttentionContext, self).__init__()
-        self.phi = MLP(device, 3, decoder_features, context_dims)
-        self.psi = MLP(device, 3, listener_features, context_dims)
+        self.phi = MLP(device, 2, decoder_features, context_dims)
+        self.psi = MLP(device, 2, listener_features, context_dims)
 
     def forward(self, s, h):
         s = self.phi(s)
@@ -91,7 +86,7 @@ class AttendAndSpell(torch.nn.Module):
                 z = y[:, i]
             else:
                 # sample from previous time step
-                pr = torch.softmax(output[-1], dim=1)
+                pr = torch.softmax(output[-1], dim=1).detach()
                 sampled = torch.multinomial(pr, 1).reshape(batch_size)
                 # choose between target and sampled outputs
                 do_sample = torch.bernoulli(prob).byte()
