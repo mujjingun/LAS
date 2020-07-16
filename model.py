@@ -99,40 +99,21 @@ class AttendAndSpell(torch.nn.Module):
         output = torch.stack(output, dim=1)
         return output
 
-    def predict(self, h, max_length, beam_size):
+    def predict(self, h, max_length):
         batch_size = h.shape[0]
-        h = h.repeat_interleave(beam_size, dim=0)
-        states = self.initial_states(batch_size * beam_size)
+        states = self.initial_states(batch_size)
 
         # start with sos
-        target = torch.zeros((batch_size, beam_size, 1), dtype=torch.long, device=self.device)
-        probs = torch.ones((batch_size, beam_size), device=self.device)
+        target = torch.zeros((batch_size, 1), dtype=torch.long, device=self.device)
         c = self.attn(states[-1][0], h)
         for length in range(1, max_length + 1):
             # advance one time step
-            z = target[:, :, -1].reshape(batch_size * beam_size)
-            o, c, states = self.step(z, h, c, states)
-
-            # multiply new conditional probability
+            o, c, states = self.step(target[:, -1], h, c, states)
+            # select greedily
             pr = torch.softmax(o, dim=1)
-            pr = pr.reshape(batch_size, beam_size, self.vocab_size)
-            pr = pr * probs.unsqueeze(2)
-            pr = pr.reshape(batch_size, beam_size * self.vocab_size)
-
-            # get top k
-            probs, indices = torch.topk(pr, beam_size)
-            beam_indices = indices // self.vocab_size
-            beam_indices = beam_indices.unsqueeze(2).repeat_interleave(length, dim=2)
-            word_indices = indices % self.vocab_size
-
-            target = torch.gather(target, 1, beam_indices)
-            new_col = word_indices.unsqueeze(2)
-            target = torch.cat([target, new_col], dim=2)
-
-        # find beam with highest probability
-        best_idx = torch.argmax(probs, dim=1)
-        best_output = target[torch.arange(batch_size), best_idx]
-        return best_output
+            new_col = torch.argmax(pr, dim=1).unsqueeze(1)
+            target = torch.cat([target, new_col], dim=1)
+        return target
 
 
 class LAS(torch.nn.Module):
@@ -187,8 +168,8 @@ class LAS(torch.nn.Module):
         self.optim.load_state_dict(load_state['optim'])
         self.step = load_state['step']
 
-    def predict(self, source, max_length, beam_size):
+    def predict(self, source, max_length):
         with torch.no_grad():
             h = self.listener(source)
-            pred = self.attend_spell.predict(h, max_length, beam_size)
+            pred = self.attend_spell.predict(h, max_length)
             return pred.cpu().numpy().tolist()

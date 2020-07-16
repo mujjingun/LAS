@@ -99,7 +99,7 @@ def main(args):
         generated = []
         for source, target in tqdm.tqdm(test):
             source = source.to(device)
-            pred_batch = las_model.predict(source, max_length=100, beam_size=4)
+            pred_batch = las_model.predict(source, max_length=100)
             for seq, truth in zip(pred_batch, target.numpy().tolist()):
                 sen = seq_to_sen(seq)
                 truth = seq_to_sen(truth)
