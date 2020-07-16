@@ -1,4 +1,5 @@
 import torch
+import math
 import tqdm
 
 
@@ -23,13 +24,14 @@ class Listener(torch.nn.Module):
 class AttentionContext(torch.nn.Module):
     def __init__(self, device, listener_features, decoder_features, context_dims):
         super(AttentionContext, self).__init__()
+        self.context_dims = context_dims
         self.phi = torch.nn.Linear(decoder_features, context_dims).to(device)
         self.psi = torch.nn.Linear(listener_features, context_dims).to(device)
 
     def forward(self, s, h):
         s = self.phi(s)
         h = self.psi(h)
-        e = torch.einsum('bd,brd->br', s, h)
+        e = torch.einsum('bd,brd->br', s, h) / math.sqrt(self.context_dims)
         alpha = torch.softmax(e, dim=1)
         c = torch.einsum('br,brd->bd', alpha, h)
         return c
