@@ -129,8 +129,6 @@ class LAS(torch.nn.Module):
         self.device = device
         self.start_lr = start_lr
         self.decay_steps = decay_steps
-        self.start_tf_rate = 0.1
-        self.tf_decay_steps = 500
 
     def forward(self, source, target, tf_rate):
         h = self.listener(source)
@@ -143,8 +141,7 @@ class LAS(torch.nn.Module):
         return loss
 
     def train_step(self, source, target):
-        tf_rate = 1 - ((1 - self.start_tf_rate) * (0.98 ** (self.step // self.tf_decay_steps)))
-        loss = self.loss(source, target, tf_rate)
+        loss = self.loss(source, target, 0.1)
         lr = self.start_lr * (0.98 ** (self.step // self.decay_steps))
         for group in self.optim.param_groups:
             group['lr'] = lr
