@@ -106,6 +106,8 @@ def main(args):
                 wer = jiwer.wer(truth, sen)
                 generated.append(sen)
                 scores.append(wer)
+        with open("pred.txt", "w") as file:
+            file.writelines(generated)
         print("Avg WER = ", np.mean(scores))
 
 
