@@ -96,13 +96,18 @@ def main(args):
             print("Saved.")
     else:
         for source, target in test:
+            source = source.to(device)
             pred_batch = las_model.predict(source, max_length=100, beam_size=4)
-            sentences = []
-            for seq in pred_batch:
+            scores = []
+            for seq, truth in zip(pred_batch, target.numpy().tolist()):
                 sen = seq_to_sen(seq)
-                sentences.append(sen)
-                print(sen)
-            # TODO: evaluate WER
+                truth = seq_to_sen(truth)
+                wer = jiwer.wer(truth, sen)
+                scores.append(wer)
+                print("Generated: ", sen)
+                print("Truth: ", truth)
+                print("WER = ", wer)
+            print("Avg WER = ", np.mean(scores))
             pass
 
 

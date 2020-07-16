@@ -85,14 +85,16 @@ class AttendAndSpell(torch.nn.Module):
         for i in range(y.shape[1]):
             # advance one time step
             o, states = self.step(z, h, states)
-            # sample from output
-            pr = torch.softmax(o, dim=1)
-            sampled = torch.multinomial(pr, 1).reshape(batch_size)
-            # choose between target and sampled outputs
-            do_sample = torch.bernoulli(prob).byte()
-            z = torch.where(do_sample, sampled, y[:, i + 1]).detach()
             # append output
             output.append(o)
+            # evaluate next feeback input
+            if i + 1 < y.shape[1]:
+                # sample from output
+                pr = torch.softmax(o, dim=1)
+                sampled = torch.multinomial(pr, 1).reshape(batch_size)
+                # choose between target and sampled outputs
+                do_sample = torch.bernoulli(prob).byte()
+                z = torch.where(do_sample, sampled, y[:, i + 1]).detach()
         output = torch.stack(output, dim=1)
         return output
 
