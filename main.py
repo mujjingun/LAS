@@ -95,20 +95,18 @@ def main(args):
             las_model.save(args.file_name)
             print("Saved.")
     else:
-        for source, target in test:
+        scores = []
+        generated = []
+        for source, target in tqdm.tqdm(test):
             source = source.to(device)
             pred_batch = las_model.predict(source, max_length=100, beam_size=4)
-            scores = []
             for seq, truth in zip(pred_batch, target.numpy().tolist()):
                 sen = seq_to_sen(seq)
                 truth = seq_to_sen(truth)
                 wer = jiwer.wer(truth, sen)
+                generated.append(sen)
                 scores.append(wer)
-                print("Generated: ", sen)
-                print("Truth: ", truth)
-                print("WER = ", wer)
-            print("Avg WER = ", np.mean(scores))
-            pass
+        print("Avg WER = ", np.mean(scores))
 
 
 if __name__ == "__main__":
