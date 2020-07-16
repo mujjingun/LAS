@@ -72,12 +72,12 @@ class AttendAndSpell(torch.nn.Module):
         o = self.output(s1)
         return o, ((s0, cs0), (s1, cs1))
 
-    def forward(self, h, y):
+    def forward(self, h, y, tf_rate):
         batch_size = h.shape[0]
         states = self.initial_states(batch_size)
 
         # sampling probability
-        prob = torch.empty((batch_size,), device=self.device).fill_(0.1)
+        prob = torch.empty((batch_size,), device=self.device).fill_(tf_rate)
 
         # rnn
         output = []
@@ -144,19 +144,22 @@ class LAS(torch.nn.Module):
         self.device = device
         self.start_lr = start_lr
         self.decay_steps = decay_steps
+        self.start_tf_rate = 0.1
+        self.tf_decay_steps = 500
 
-    def forward(self, source, target):
+    def forward(self, source, target, tf_rate):
         h = self.listener(source)
-        o = self.attend_spell(h, target)
+        o = self.attend_spell(h, target, tf_rate)
         return o
 
-    def loss(self, source, target):
-        o = self.forward(source, target[:, :-1])
+    def loss(self, source, target, tf_rate):
+        o = self.forward(source, target[:, :-1], tf_rate)
         loss = self.loss_func(o.reshape(-1, o.shape[-1]), target[:, 1:].reshape(-1))
         return loss
 
     def train_step(self, source, target):
-        loss = self.loss(source, target)
+        tf_rate = 1 - ((1 - self.start_tf_rate) * (0.98 ** (self.step // self.tf_decay_steps)))
+        loss = self.loss(source, target, tf_rate)
         lr = self.start_lr * (0.98 ** (self.step // self.decay_steps))
         for group in self.optim.param_groups:
             group['lr'] = lr
