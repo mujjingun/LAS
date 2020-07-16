@@ -86,7 +86,7 @@ def main(args):
             for source, target in val:
                 source, target = source.to(device), target.to(device)
                 with torch.no_grad():
-                    loss = las_model.loss(source, target).item()
+                    loss = las_model.loss(source, target, 0).item()
                 val_losses.append(loss)
             print("Val loss ", np.mean(val_losses))
 

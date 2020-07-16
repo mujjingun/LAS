@@ -45,7 +45,7 @@ class AttendAndSpell(torch.nn.Module):
         self.vocab_size = vocab_size
         self.hidden_size = hidden_size
         self.arange = torch.arange(vocab_size, device=device)
-        self.output = torch.nn.Linear(hidden_size, vocab_size).to(device)
+        self.output = torch.nn.Linear(hidden_size * 2, vocab_size).to(device)
 
     def initial_states(self, batch_size):
         # initial states
@@ -58,19 +58,19 @@ class AttendAndSpell(torch.nn.Module):
 
         return (s0, cs0), (s1, cs1)
 
-    def step(self, z, h, states):
+    def step(self, z, h, c, states):
         (s0, s1), (cs0, cs1) = states
         # one-hot encoding
         z = (z.unsqueeze(1) == self.arange.unsqueeze(0)).float()
-        # attention
-        c = self.attn(s1, h)
         # two-layer lstm
         inputs = torch.cat([z, c], dim=1)
         s0, cs0 = self.lstm0(inputs, (s0, cs0))
         s1, cs1 = self.lstm1(s0, (s1, cs1))
+        # attention
+        c = self.attn(s1, h)
         # project to output space
-        o = self.output(s1)
-        return o, ((s0, cs0), (s1, cs1))
+        o = self.output(torch.cat([s1, c], dim=1))
+        return o, c, ((s0, cs0), (s1, cs1))
 
     def forward(self, h, y, tf_rate):
         batch_size = h.shape[0]
@@ -82,9 +82,10 @@ class AttendAndSpell(torch.nn.Module):
         # rnn
         output = []
         z = y[:, 0]
+        c = self.attn(states[-1][0], h)
         for i in range(y.shape[1]):
             # advance one time step
-            o, states = self.step(z, h, states)
+            o, c, states = self.step(z, h, c, states)
             # append output
             output.append(o)
             # evaluate next feeback input
@@ -106,10 +107,11 @@ class AttendAndSpell(torch.nn.Module):
         # start with sos
         target = torch.zeros((batch_size, beam_size, 1), dtype=torch.long, device=self.device)
         probs = torch.ones((batch_size, beam_size), device=self.device)
+        c = self.attn(states[-1][0], h)
         for length in range(1, max_length + 1):
             # advance one time step
             z = target[:, :, -1].reshape(batch_size * beam_size)
-            o, states = self.step(z, h, states)
+            o, c, states = self.step(z, h, c, states)
 
             # multiply new conditional probability
             pr = torch.softmax(o, dim=1)
