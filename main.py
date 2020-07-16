@@ -26,7 +26,9 @@ def main(args):
 
     # convert sequence to sentence
     def seq_to_sen(seq):
-        return "".join(inv_map[i] for i in seq)
+        seq = seq + [1]
+        eos_idx = seq.index(1)
+        return "".join(inv_map[i] for i in seq[1:eos_idx])
 
     # load dataset
     data = dataset.SpeechDataset('train-clean-100.csv', args.path, True)
