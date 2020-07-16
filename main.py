@@ -107,7 +107,7 @@ def main(args):
                 generated.append(sen)
                 scores.append(wer)
         with open("pred.txt", "w") as file:
-            file.writelines(generated)
+            file.write("\n".join(generated))
         print("Avg WER = ", np.mean(scores))
 
 
