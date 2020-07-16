@@ -90,7 +90,7 @@ class AttendAndSpell(torch.nn.Module):
             sampled = torch.multinomial(pr, 1).reshape(batch_size)
             # choose between target and sampled outputs
             do_sample = torch.bernoulli(prob).byte()
-            z = torch.where(do_sample, sampled, y[:, i]).detach()
+            z = torch.where(do_sample, sampled, y[:, i + 1]).detach()
             # append output
             output.append(o)
         output = torch.stack(output, dim=1)
