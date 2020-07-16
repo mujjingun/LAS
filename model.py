@@ -15,7 +15,7 @@ class Listener(torch.nn.Module):
         x = x.transpose(0, 1)
         for lstm in self.lstms:
             x, _ = lstm(x)
-            x = x.reshape([x.shape[0] // 2, x.shape[1], x.shape[2] * 2])
+            x = torch.cat([x[0::2], x[1::2]], dim=2)
         x = x.transpose(0, 1)
         return x
 
