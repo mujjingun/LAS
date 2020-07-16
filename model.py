@@ -106,7 +106,7 @@ class AttendAndSpell(torch.nn.Module):
         # start with sos
         target = torch.zeros((batch_size, beam_size, 1), dtype=torch.long, device=self.device)
         probs = torch.ones((batch_size, beam_size), device=self.device)
-        for length in tqdm.tqdm(range(1, max_length + 1)):
+        for length in range(1, max_length + 1):
             # advance one time step
             z = target[:, :, -1].reshape(batch_size * beam_size)
             o, states = self.step(z, h, states)
